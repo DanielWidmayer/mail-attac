@@ -39,8 +39,12 @@ user = pwd.getpwuid(os.getuid()).pw_name
 host = socket.gethostname()
 
 send_mail('%s@%s' % (user, host),
-        ['me@pwcracker.email'],
-        argv[1],
-        argv[2],
-        argv[3:]
+        #argv[1],
+        ['testuser@pwcracker.email'],
+        #argv[2],
+        "Testing",
+        #argv[3],
+        "This mail text should be extracted and parsed. As a password for the possibly encrypted attached archive file we are using testword. Lets see how this goes!",
+        #argv[4:]
+        argv[1:]
     )
