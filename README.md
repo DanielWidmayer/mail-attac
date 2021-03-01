@@ -19,7 +19,6 @@ please report any issues or ideas.
 -   [Rspamd](https://github.com/rspamd/rspamd) as spamfilter to call an external service from
 -   [olefy](https://github.com/HeinleinSupport/olefy) as architecture for our own service listening on the TCP port
 -   [wwwordlist](https://github.com/Zarcolio/wwwordlist) to generate a wordlist from the mailtext
--   [zip2john](https://github.com/openwall/john/blob/bleeding-jumbo/src/zip2john.c) to generate the hash from the encrypted archive file
 -   [johntheripper](https://github.com/openwall/john) to crack the password with the wordlist
 
 
@@ -27,11 +26,11 @@ please report any issues or ideas.
 
 In `rspamd/local.d/external_services.conf` we define the mime filtering and the TCP socket that olefy listens on.
 
-When the MTA (in our case Mail-in-a-Box uses Postfix) sends mail and smtp data over the milter protocol to the rspamd proxy, the data is transmitted to our service that analyzes the data.
+When the MTA (in our case Mail-in-a-Box uses Postfix) sends mail and smtp data over the milter protocol to the Rspamd proxy, the data is transmitted to our service that analyzes the data.
 
-If the data is the mail body (plain/html) wwwordlist will generate a wordlist, if the data is the encrypted archive file the service will call zip2john to generate the hash and try to crack the password by calling johntheripper with the hash and wordlist.
+If the data is the mail body (plain/html) wwwordlist will generate a wordlist, if the data is the encrypted archive file the service will call an archive-function from john to generate the hash and try to crack the password by calling johntheripper with the hash and wordlist.
 
-If the password is cracked successfully the service returns the decrypted Archive File to rspamd which can analyze it on malware. If it's not decrypted the mail will be rated as spam or receive a warning for the user. 
+If the password is cracked successfully the service could then return the decrypted archive file to Rspamd which could analyze it on malware. This last step is not implemented yet as we are clueless on how to pass the decrypted files back to Rspamd so we left it up to the user to decide what to do after the password has been cracked.
 
 # Default Installation
 
