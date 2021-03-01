@@ -7,7 +7,7 @@
 #
 ###
 
-from subprocess import Popen, PIPE
+import subprocess
 import sys
 import os
 import logging
@@ -29,6 +29,7 @@ olefy_loglvl = int(os.getenv('OLEFY_LOGLVL', 20))
 olefy_min_length = int(os.getenv('OLEFY_MINLENGTH', 50))
 olefy_del_tmp = int(os.getenv('OLEFY_DEL_TMP', 1))
 olefy_del_tmp_failed = int(os.getenv('OLEFY_DEL_TMP_FAILED', 1))
+john_path = os.getenv('JOHN_PATH')
 
 # internal used variables
 request_time = '0000000000.000000'
@@ -59,6 +60,7 @@ logger.info('olefy log level: {}'.format(olefy_loglvl))
 logger.info('olefy min file length: {}'.format(olefy_min_length))
 logger.info('olefy delete tmp file: {}'.format(olefy_del_tmp))
 logger.info('olefy delete tmp file when failed: {}'.format(olefy_del_tmp_failed))
+logger.info('john path: {}'.format(john_path))
 
 if not os.path.isfile(olefy_python_path):
     logger.critical('python path not found: {}'.format(olefy_python_path))
@@ -89,56 +91,90 @@ def oletools( stream, tmp_file_name, lid ):
         tmp_file.write(stream)
         tmp_file.close()
 
+        # get file mime type with libmagic
         file_magic = magic.Magic(mime=True, uncompress=True)
         file_mime = file_magic.from_file(tmp_file_name)
         logger.info('{} {} (libmagic output)'.format(lid, file_mime))
 
-        if stream[:4] == "\x50\x4b\x03\x04" or \
-           stream[:4] == "\x50\x4b\x05\x06" or \
-           stream[:4] == "\x50\x4b\x07\x08" or \
-           'encrypted' in file_mime or 'zip' in file_mime:
-               wordlist = '/tmp/{}-wordlist'.format(lid)
-               for i in range(0,10):
-                   try:
-                       with open(wordlist, 'r') as wlf:
-                           words = wlf.read()
-                       logger.debug('Words from wordlist-file: {}:'.format(words))
-                       break
-                   except FileNotFoundError:
-                       time.sleep(0.5)
-                       logger.info('Attempt {}'.format(i))
-                       pass
-               if i >= 9:
-                   logger.warning('Cannot read Wordlist - {} attempts!'.format(i))
-               else:
-                   # TODO - JOHN THINGS
-                   os.system("~/john/run/zip2john {}".format(tmp_file))
-                   logger.info("john")
+        # placeholders for temporary files
+        wordlist_file = '/tmp/{}-wordlist'.format(lid.strip('<>'))
+        archive_file = '/tmp/{}-archive'.format(lid.strip('<>'))
+        hash_file = '/tmp/{}-hash'.format(lid.strip('<>'))
 
-        elif 'text' in file_mime:
-            # extract the wordlist from the mail
-            logger.debug('Mail-body: {}'.format(stream.decode('utf-8', 'ignore')))
-            wordlist = wwwordlist.runwwwordlist(stream.decode('utf-8', 'ignore'),'mailfile')
-
+        # check mime of stream for plain or text, this should be the mailtext
+        if 'plain' in file_mime or 'text' in file_mime:
             try:
+                logger.debug('Mail-body: {}'.format(stream.decode('utf-8','ignore')))
+                # extract the wordlist from the mailtext
+                wordlist = wwwordlist.runwwwordlist(stream.decode('utf-8', 'ignore'),'mailfile')
                 # write wordlist to file
-                wFile = open(tmp_file_name, 'w+')
-                for word in wordlist:
-                    wFile.write(word + '\n')
-                #wFile.seek(0)
-                #logger.debug('File Content: {}'.format(wfile.read()))
-                wFile.close()
-
-                wordlist = '/tmp/{}-wordlist'.format(lid)
-                type(lid)
-                os.symlink(tmp_file_name, wordlist)
+                if os.path.isfile(wordlist_file) == False:
+                    wFile = open(wordlist_file, 'w')
+                    for word in wordlist:
+                        wFile.write(word + '\n')
+                    wFile.close()
             except Exception as e:
-                logger.error('An Error Occured!: ' + str(e))
-                raise
+                logger.debug('An Error Occured!: ' + str(e))
+
+            if os.path.isfile(archive_file):
+                logger.info('archive file found')
+                # JOHN THINGS
+                try:
+                    jobj = subprocess.run(['bash', '-c', john_path+'john --wordlist="%s" %s'%(wordlist_file, hash_file)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    logger.debug(jobj.stdout.decode('UTF-8'))
+                    if jobj.stderr:
+                        logger.debug(jobj.stderr.decode('UTF-8'))
+                    pw = subprocess.run([john_path+'john', '--show', hash_file], stdout=subprocess.PIPE)
+                    pw = pw.stdout.decode('UTF-8').split(':')[1].split('\n')[0]
+                    logger.info(pw)
+                except Exception as e:
+                    logger.debug('An Error Occured: ' + str(e))
+            else: logger.info('archive file not found')
+
+        # if the mime was not text or html it should be an archive type
         else:
-            logger.info('Mime {} not processed!'.format(file_mime))
+            # check if archive file already exists, perform zip2john if it does not
+            if os.path.isfile(archive_file) == False:
+                try:
+                    #logger.info(stream)
+                    aFile = open(archive_file, 'wb')
+                    aFile.write(stream)
+                    aFile.close()
+                    cobj = None
+                    # make archive john-readable, you need to check for every supported archive format because john uses different functions for them
+                    if stream[:6] == b'\x37\x7A\xBC\xAF\x27\x1C': #7z
+                        cobj = subprocess.run(['bash', '-c', john_path+'7z2john.pl %s > %s'%(archive_file, hash_file)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    elif stream[:6] == b'\x52\x61\x72\x21\x1A\x07': #rar
+                        cobj = subprocess.run(['bash', '-c', john_path+'rar2john %s > %s'%(archive_file, hash_file)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    elif stream[:4] == b'\x50\x4B\x03\x04': #zip
+                        cobj = subprocess.run(['bash', '-c', john_path+'zip2john %s > %s'%(archive_file, hash_file)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    if cobj.stderr:
+                        logger.debug(cobj.stderr.decode('UTF-8'))
+                except Exception as e:
+                    logger.debug('Error: ' + str(e))
+
+            # check if wordlist already exists, try to crack password if it exists
+            if os.path.isfile(wordlist_file):
+                try:
+                    if olefy_loglvl < 20:
+                        with open(wordlist_file, 'r') as wlf:
+                            words = wlf.read()
+                        logger.debug('Words from wordlist-file: {}:'.format(words))
+                    # JOHN THINGS
+                    jobj = subprocess.run(['bash', '-c', john_path+'john --wordlist="%s" %s'%(wordlist_file, hash_file)], stdout=subporcess.PIPE, stderr=subprocess.STDOUT)
+                    logger.debug(jobj.stdout.decode('UTF-8'))
+                    if jobj.stderr:
+                        logger.debug(jobj.stderr.decode('UTF-8'))
+                    pw = subprocess.run([john_path+'john', '--show', hash_file], stdout=subprocess.PIPE)
+                    pw = pw.stdout.decode('UTF-8').split(':')[1].split('\n')[0]
+                    logger.info(pw)
+                except Exception as e:
+                    logger.debug('{}'.format(str(e)))
+
+            else: logger.info('wordlist file not found')
+
     # logger.debug('{} response: {}'.format(lid, out.decode('utf-8', 'ignore')))
-    return b'\t\n\n\t '  #out + b'\t\n\n\t'
+    return b'\t\n\n\t'
 
 # Asyncio data handling, default AIO-Functions
 class AIO(asyncio.Protocol):
