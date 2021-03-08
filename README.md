@@ -32,37 +32,10 @@ If the data is the mail body (plain/html) wwwordlist will generate a wordlist, i
 
 If the password is cracked successfully the service could then return the decrypted archive file to Rspamd which could analyze it on malware. This last step is not implemented yet as we are clueless on how to pass the decrypted files back to Rspamd so we left it up to the user to decide what to do after the password has been cracked.
 
-# Default Installation
+Demo:
+[![asciicast](https://asciinema.org/a/muxhHlRDHWk9QOdEvZxN3UF6H.svg)](https://asciinema.org/a/muxhHlRDHWk9QOdEvZxN3UF6H)
 
-
-
-## Install Python3 oletools and python-magic
-
-## Install mail-attac
-
--   clone or download this repo
--   **add the user and group olefy** or edit olefy.service to use any other existing user/group
--   edit olefy.conf to fit your needs
-    --> **The paths fit for Debian style systems and maybe not yours**
-
--   copy olefy.py daemon file to /usr/local/bin
--   copy olefy.conf to /etc
--   copy the systemd service file olefy.service to /etc/systemd/system
--   enable and unmask the Service
-~~
-systemctl daemon-reload
-systemctl unmask olefy.service
-systemctl enable olefy.service
-~~
-
-# Extended Installation
-
-
-# Settings
-
-# Debugging
-
-# Monitoring
+For further information and installation instructions visit the [wiki](https://github.com/DanielWidmayer/mail-attac/wiki)
 
 # License
 
